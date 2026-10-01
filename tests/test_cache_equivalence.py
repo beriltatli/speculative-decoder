@@ -6,11 +6,12 @@ from baselines import cached_autoregressive, no_cache
 from cache.kv import KVCache
 from lm.forward import forward
 
+# fp64, not the brief's 1e-4 in fp32. On SmolLM2-135M in fp32 the cached path differs from
+# recompute by 1.12e-4 on an Apple M3 and by less than 1e-4 on GitHub's x86 runner: 1-row and
+# n-row matmuls round differently, and how much depends on the BLAS. In fp64 the same
+# comparison is 2.2e-14, so the fp32 gap is kernel rounding and says nothing about the cache.
+# The fp32 figure is a platform measurement and is reported with its hardware in results/.
 TOL_FP64 = 1e-10
-# The brief's threshold. On SmolLM2-135M in fp32 the cached path differs from recompute by
-# 1.12e-4 because 1-row and n-row matmuls round differently; in fp64 the same comparison is
-# 2.2e-14, so the gap is kernel rounding, not the cache.
-TOL_FP32 = 1e-4
 
 
 @torch.no_grad()
@@ -97,8 +98,8 @@ def real_draft(dtype: str) -> tuple[torch.nn.Module, list[int]]:
     config = yaml.safe_load(open("config.yaml"))
     spec = config["models"]["draft"]
     try:
-        model = load_model(spec, config["models"]["cache_dir"], torch.device("cpu"), dtype=dtype)
-        tokenizer = load_tokenizer(spec, config["models"]["cache_dir"])
+        model = load_model(spec, config["models"]["cache_dir"], torch.device("cpu"), dtype=dtype, local_files_only=True)
+        tokenizer = load_tokenizer(spec, config["models"]["cache_dir"], local_files_only=True)
     except OSError:
         pytest.skip("draft weights not downloaded")
     tokens = tokenizer("def fibonacci(n):\n    if n < 2:\n        return n\n    return")["input_ids"]
@@ -110,9 +111,3 @@ def test_real_draft_model_fp64() -> None:
     model, tokens = real_draft("float64")
     assert max_step_diff(model, tokens, prefill=8, block_size=16) <= TOL_FP64
 
-
-@pytest.mark.model
-@pytest.mark.xfail(strict=True, reason="measured 1.12e-4 in fp32: matmul shape rounding, see TOL_FP32")
-def test_real_draft_model_fp32() -> None:
-    model, tokens = real_draft("float32")
-    assert max_step_diff(model, tokens, prefill=8, block_size=16) <= TOL_FP32

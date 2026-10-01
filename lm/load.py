@@ -29,11 +29,18 @@ def resolve_device(name: str) -> torch.device:
     return torch.device("cpu")
 
 
-def load_model(spec: dict[str, Any], cache_dir: str, device: torch.device, dtype: str | None = None) -> PreTrainedModel:
+def load_model(
+    spec: dict[str, Any],
+    cache_dir: str,
+    device: torch.device,
+    dtype: str | None = None,
+    local_files_only: bool = False,
+) -> PreTrainedModel:
     model = AutoModelForCausalLM.from_pretrained(
         spec["repo"],
         revision=spec["revision"],
         cache_dir=cache_dir,
+        local_files_only=local_files_only,
         dtype=getattr(torch, dtype or spec["dtype"]),
         # Not "eager": Llama's eager attention always computes softmax in fp32
         # (modeling_llama.py:208), which caps an fp64 reference at ~1e-5. SDPA keeps the
@@ -50,8 +57,10 @@ def load_config(spec: dict[str, Any], cache_dir: str) -> PretrainedConfig:
     return AutoConfig.from_pretrained(spec["repo"], revision=spec["revision"], cache_dir=cache_dir)
 
 
-def load_tokenizer(spec: dict[str, Any], cache_dir: str) -> PreTrainedTokenizerBase:
-    return AutoTokenizer.from_pretrained(spec["repo"], revision=spec["revision"], cache_dir=cache_dir)
+def load_tokenizer(spec: dict[str, Any], cache_dir: str, local_files_only: bool = False) -> PreTrainedTokenizerBase:
+    return AutoTokenizer.from_pretrained(
+        spec["repo"], revision=spec["revision"], cache_dir=cache_dir, local_files_only=local_files_only
+    )
 
 
 def check_shared_vocab(
