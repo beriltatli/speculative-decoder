@@ -4,3 +4,5 @@ transformers==5.18.0
 numpy==2.5.3
 PyYAML==6.0.3
 pytest==9.1.1
+scipy==1.18.1
+matplotlib==3.11.2
