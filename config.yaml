@@ -1,0 +1,4 @@
+# Single source of truth for every run. Model ids and revisions are pinned in Phase 1,
+# once a target/draft pair is confirmed to download on this machine.
+seed: 0
+device: auto  # cuda > mps > cpu

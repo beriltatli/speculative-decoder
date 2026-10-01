@@ -1,0 +1,6 @@
+# Exact pins. CI installs the CPU build of torch from the PyTorch index; the version is the same.
+torch==2.14.1
+transformers==5.18.0
+numpy==2.5.3
+PyYAML==6.0.3
+pytest==9.1.1
