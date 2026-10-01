@@ -1,4 +1,19 @@
-# Single source of truth for every run. Model ids and revisions are pinned in Phase 1,
-# once a target/draft pair is confirmed to download on this machine.
 seed: 0
 device: auto  # cuda > mps > cpu
+
+models:
+  cache_dir: models
+  # Same family, same 49,152-token vocabulary; checked at load by lm.load.check_shared_vocab.
+  # bf16 because both pairs in fp32 do not fit in 8 GiB; fp32 is used where 1e-4 equivalence is asserted.
+  target:
+    repo: HuggingFaceTB/SmolLM2-1.7B-Instruct
+    revision: 31b70e2e869a7173562077fd711b654946d38674
+    dtype: bfloat16
+  draft:
+    repo: HuggingFaceTB/SmolLM2-135M-Instruct
+    revision: 12fd25f77366fa6b3b4b768ec3050bf629380bac
+    dtype: bfloat16
+
+cache:
+  block_size: 16  # provisional; Phase 5 measures waste against bookkeeping across sizes
+  num_blocks: 2048
