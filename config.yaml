@@ -13,6 +13,27 @@ models:
     repo: HuggingFaceTB/SmolLM2-135M-Instruct
     revision: 12fd25f77366fa6b3b4b768ec3050bf629380bac
     dtype: bfloat16
+  # Greedy identity on real weights is asserted in fp64, where a 1-token and a (k+1)-token
+  # forward agree to ~1e-14. The 1.7B target needs 14 GiB in fp64, so this check uses the
+  # family's 360M as target over the same 135M draft. In bf16 the logit grid at |x| ~ 20 is
+  # 0.125 wide, so a near-tie can flip under a different matmul shape; that rate is measured
+  # on the main pair rather than asserted.
+  identity_target:
+    repo: HuggingFaceTB/SmolLM2-360M-Instruct
+    revision: a10cc1512eabd3dde888204e902eca88bddb4951
+    dtype: float64
+
+greedy_identity:
+  k: 4
+  # Exact equality is binary: one logic bug breaks it on almost every prompt, so 50 prompts
+  # catch a bug as surely as 200 (the tiny-model test already runs 200/200). fp64 on CPU is
+  # ~30 s per prompt at 32 tokens.
+  exact:
+    prompts_per_category: [17, 17, 16]
+    max_new_tokens: 16
+  main:
+    prompts_per_category: [67, 67, 66]
+    max_new_tokens: 32
 
 cache:
   block_size: 16  # provisional; Phase 5 measures waste against bookkeeping across sizes
