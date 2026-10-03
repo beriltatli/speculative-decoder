@@ -66,8 +66,9 @@ def logits(model: PreTrainedModel, hidden: torch.Tensor) -> torch.Tensor:
     """The output projection in at least fp32. In bf16 the logit grid is 0.125 wide at
     |x| ~ 20, so near-tied candidates often round to the same value, and argmax then breaks
     the tie by whichever rounding a (k+1)-token verify and a 1-token decode happened to
-    produce: on the 1.7B target that 7 of the 13 prompts that diverged did so at an exact tie. The
-    fp32 copy of the weight is made once and kept on the model (~400 MB for the 1.7B)."""
+    produce. On the 1.7B target in bf16, 7 of the 13 prompts (of 200) that diverged did so
+    at an exact tie. The fp32 copy of the weight is made once and kept on the model
+    (~400 MB for the 1.7B)."""
     dtype = torch.promote_types(hidden.dtype, torch.float32)
     weight = model.lm_head.weight
     cached = getattr(model, "_lm_head_wide", None)
