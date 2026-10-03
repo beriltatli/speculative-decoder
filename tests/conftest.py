@@ -1,4 +1,6 @@
 import pytest
+
+from sanity_guard import pytest_runtest_logreport, pytest_sessionfinish  # noqa: F401  (hooks)
 import torch
 
 from lm.load import tiny_model

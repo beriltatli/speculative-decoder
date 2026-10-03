@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 import torch
 from transformers import PreTrainedModel
 
@@ -12,6 +14,7 @@ def generate(
     temperature: float = 0.0,
     generator: torch.Generator | None = None,
     eos_id: int | None = None,
+    on_event: Callable[[str], None] | None = None,
 ) -> list[int]:
     """Recompute the whole prefix every step: O(n^2) attention work in total, on purpose.
     This is the floor that shows how much of any speedup is the cache, not the speculation."""
@@ -21,6 +24,8 @@ def generate(
         logits = model(ids, use_cache=False).logits[0, -1]
         token = next_token(logits, temperature, generator)
         out.append(token)
+        if len(out) == 1 and on_event:
+            on_event("first_token")
         if token == eos_id:
             break
         ids = torch.cat([ids, torch.tensor([[token]], device=ids.device)], dim=1)

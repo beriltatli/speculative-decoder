@@ -2,6 +2,14 @@
 
 **Status: Phases 0–3 of 6 complete (KV cache, accept-reject, draft-verify loop). No speed measurements yet; those start in Phase 4. Two real-weight identity runs are in progress and marked as such below.**
 
+## Why tokens/sec is the wrong headline
+
+### Where the stopwatch stops decides the TTFT
+
+This loop emits the first token from the target's prefill, before the draft runs. Speculative decoding then costs nothing in TTFT, and the draft's one-time prefill is spread across every token of TPOT. Stopping the stopwatch at the end of the first speculative round instead moves the draft's prefill, its k steps and the first verify into TTFT. It also biases TPOT low: the round's time leaves the numerator, but its tokens stay in the denominator. `transformers`' assisted path can only be measured the second way, because it emits nothing before its first round. Both definitions are computed from the same Phase 4 run and reported side by side, with the draft prefill and end-to-end latency as separate columns. Definitions: `bench/latency.py`.
+
+*Numbers pending: the Phase 4 run has not been taken yet.*
+
 ## Correctness
 
 ### Greedy identity

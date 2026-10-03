@@ -38,3 +38,20 @@ greedy_identity:
 cache:
   block_size: 16  # provisional; Phase 5 measures waste against bookkeeping across sizes
   num_blocks: 2048
+
+bench:
+  # Batch size 1 here; the batch-size sweep is a separate run (Phase 5).
+  batch_size: 1
+  k: 4
+  # 32, not 64: with 100 measured rounds per cell the no-cache floor costs ~23 s per call at
+  # 450-token prompts, so 64 tokens would put the run near 8 hours on the M3.
+  max_new_tokens: 32
+  warmup: 3      # rounds per configuration, excluded from every statistic
+  repeats: 100   # measured rounds: a p99 needs at least 100 samples per cell; prompts cycle (j mod n)
+  edge_rounds: 3 # first/last rounds whose TPOT median is reported to expose thermal drift
+  # Two prompt-length conditions, reported separately. long (300-600 tokens) is the regime
+  # the claims are about; short (9-167 tokens) is kept to show the cache's advantage
+  # collapsing when there is almost nothing to cache.
+  conditions:
+    long: prompts/prompts_long.json
+    short: prompts/prompts.json

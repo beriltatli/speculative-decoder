@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import torch
@@ -42,16 +43,22 @@ def generate(
     temperature: float = 0.0,
     generator: torch.Generator | None = None,
     eos_id: int | None = None,
+    on_event: Callable[[str], None] | None = None,
 ) -> tuple[list[list[int]], SpecStats]:
     generator = generator or torch.Generator().manual_seed(0)
     stats = SpecStats(k)
     seq_ids = list(range(len(prompts)))
     for seq_id in seq_ids:
         cache.add(seq_id)
+    on_event = on_event or (lambda name: None)
     # The first token comes from the target's prefill logits, exactly as in plain decoding,
-    # so time to first token is the same quantity for every method.
+    # and is emitted before the draft does any work. The draft's prefill and the first round
+    # are reported as their own events so the benchmark can show what each TTFT definition
+    # includes rather than pick one silently.
     first = sample(probabilities(run(target, cache, seq_ids, prompts), temperature).cpu(), generator).tolist()
+    on_event("first_token")
     drafter.prefill(seq_ids, prompts)
+    on_event("draft_prefilled")
     contexts = [p + [t] for p, t in zip(prompts, first)]
     outputs = [[t] for t in first]
     active = [s for s in seq_ids if not finished(outputs[s], max_new_tokens, eos_id)]
@@ -88,6 +95,8 @@ def generate(
             drafter.rollback(s, length_before + n)
             still_active.append(s)
         active = still_active
+        if stats.rounds == 1:
+            on_event("first_round")
     return outputs, stats
 
 
