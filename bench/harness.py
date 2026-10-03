@@ -97,7 +97,10 @@ def measure(
     sync: Sync,
     seed: int,
     clock: Clock = time.perf_counter,
+    after_each: Callable[[str, int], None] | None = None,
 ) -> Run:
+    """`after_each(config, round)` runs after every call, outside the timed window (round is
+    -1 during warmup): the place for freeing allocator caches and logging progress."""
     rng = random.Random(seed)
     names = list(workloads)
 
@@ -116,6 +119,8 @@ def measure(
     for _ in range(warmup):
         for name in rng.sample(names, len(names)):
             once(name)
+            if after_each:
+                after_each(name, -1)
 
     run = Run([], warmup, repeats)
     for r in range(repeats):
@@ -124,6 +129,8 @@ def measure(
         for slot, name in enumerate(order):
             w = once(name)
             run.samples.append(Sample(name, r, slot, w.stop_at - w.start_at, w.tokens, dict(w.marks)))
+            if after_each:
+                after_each(name, r)
     return run
 
 

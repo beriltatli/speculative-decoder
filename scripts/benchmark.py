@@ -69,7 +69,10 @@ def workloads(target, draft, prompts: list[list[int]], device, settings: dict, e
         "spec_draft": ModelDraft(draft, cache(draft)),
         "spec_self": ModelDraft(target, cache(target)),
     }
-    target_caches = {name: cache(target) for name in ["cached", *drafters]}
+    # Methods run one at a time and generate() frees its blocks, so one target cache serves
+    # all of them; one per method cost ~0.5 GB on a machine that has none to spare.
+    shared = cache(target)
+    target_caches = {name: shared for name in ["cached", *drafters]}
 
     def cycling(body):
         # Every method is called equally often in the same rounds, so call j of each method
@@ -117,6 +120,19 @@ def workloads(target, draft, prompts: list[list[int]], device, settings: dict, e
         **{name: cycling(run_spec(name)) for name in drafters},
         "hf_assisted": cycling(run_hf),
     }
+
+
+def between(device: torch.device, label: str):
+    """Runs after each call, outside the timed window. The MPS allocator keeps freed blocks
+    cached; on an 8 GB machine the no-cache floor's activations alone pushed the process to
+    7 GB and into swap, which slowed every method and made the timings meaningless."""
+    def after(name: str, round_: int) -> None:
+        if device.type == "mps":
+            torch.mps.empty_cache()
+        if round_ >= 0 and round_ % 10 == 0 and name == "cached":
+            print(f"progress {label} round {round_}", flush=True)
+
+    return after
 
 
 def load_prompts(path: str) -> dict[str, list[str]]:
@@ -171,7 +187,8 @@ def main() -> None:
             acceptance: dict[str, list[tuple[int, int]]] = {}
             reference: dict[int, list[int]] = {}
             run = measure(workloads(target, draft, prompts, device, settings, eos_id, acceptance, reference),
-                          settings["warmup"], settings["repeats"], synchronizer(device), seed=config["seed"])
+                          settings["warmup"], settings["repeats"], synchronizer(device), seed=config["seed"],
+                          after_each=between(device, f"{condition} {category}"))
             summary = summarize(run, settings["edge_rounds"])
             for name, calls in acceptance.items():
                 # Measured calls only: warmup calls come first for every method.

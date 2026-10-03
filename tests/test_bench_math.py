@@ -242,3 +242,18 @@ def test_loop_emits_first_token_before_the_draft_runs(tiny, tiny_draft) -> None:
     generate(tiny, new_cache(tiny), Watched(tiny_draft, new_cache(tiny_draft)), [[1, 2, 3]], 12, k=4,
              on_event=events.append)
     assert events == ["first_token", "draft_work", "draft_prefilled", "first_round"]
+
+
+def test_after_each_runs_outside_the_timed_window() -> None:
+    # A hook that takes 5 s (freeing caches, logging) must not appear in any measurement.
+    clock = FakeClock()
+    calls: list[tuple[str, int]] = []
+
+    def after(name: str, round_: int) -> None:
+        clock.now += 5.0
+        calls.append((name, round_))
+
+    run = measure({"a": fixed(clock, 0.1, 0.01, 3)}, warmup=2, repeats=3, sync=clock.sync, seed=0, clock=clock,
+                  after_each=after)
+    assert all(s.total == pytest.approx(0.12) for s in run.samples)
+    assert calls == [("a", -1), ("a", -1), ("a", 0), ("a", 1), ("a", 2)]
