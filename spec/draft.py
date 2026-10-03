@@ -89,6 +89,4 @@ def run(model: PreTrainedModel, cache: KVCache, seq_ids: list[int], chunks: list
     n_new = [len(c) for c in chunks]
     width = max(n_new)
     input_ids = torch.tensor([c + [0] * (width - len(c)) for c in chunks], device=cache.device)
-    logits = forward(model, cache, seq_ids, input_ids, n_new)
-    last = torch.tensor(n_new, device=cache.device) - 1
-    return logits[torch.arange(len(chunks), device=cache.device), last]
+    return forward(model, cache, seq_ids, input_ids, n_new, last_only=True)

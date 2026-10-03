@@ -21,12 +21,19 @@ class VocabMismatch(ValueError):
 
 def resolve_device(name: str) -> torch.device:
     if name != "auto":
-        return torch.device(name)
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
+        device = torch.device(name)
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
+    if device.type == "mps":
+        # MPS shares RAM with the OS. The default cap is 1.7x the recommended working set
+        # (9 GB on an 8 GB machine), so an oversized run swaps until the whole Mac stalls.
+        # At 1.0 it raises an out-of-memory error instead.
+        torch.mps.set_per_process_memory_fraction(1.0)
+    return device
 
 
 def load_model(
@@ -47,10 +54,32 @@ def load_model(
         # requested dtype. lm.forward shares only the torch kernel with HF's path, not the
         # mask, positions or cache logic under test.
         attn_implementation="sdpa",
-    ).to(device)
+    )
+    pack(model, device)
     model.eval()
     check_supported(model)
     return model
+
+
+def pack(model: PreTrainedModel, device: torch.device) -> None:
+    """Move every parameter into one contiguous buffer on `device`. Moved one tensor at a
+    time, the MPS allocator rounds each up to its own heap: the 1.7B's 3.19 GiB of bf16
+    weights took 4.01 GiB of driver memory, against 3.26 GiB packed, on a machine where that
+    difference is the line between running and swapping. Tied weights are one parameter
+    and are packed once."""
+    params = list(model.parameters())
+    dtypes = {p.dtype for p in params}
+    if len(dtypes) != 1:
+        model.to(device)
+        return
+    flat = torch.empty(sum(p.numel() for p in params), dtype=dtypes.pop(), device=device)
+    offset = 0
+    for p in params:
+        view = flat[offset : offset + p.numel()].view_as(p)
+        view.copy_(p.data)
+        p.data = view
+        offset += p.numel()
+    model.to(device)  # buffers (rotary frequencies)
 
 
 def load_config(spec: dict[str, Any], cache_dir: str) -> PretrainedConfig:

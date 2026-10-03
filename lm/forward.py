@@ -25,10 +25,14 @@ def forward(
     seq_ids: list[int],
     input_ids: torch.Tensor,
     n_new: list[int],
+    last_only: bool = False,
 ) -> torch.Tensor:
     """Run `input_ids` [B, T] (right-padded; row b has n_new[b] real tokens) through the
     model, appending to each sequence's cache. Returns logits [B, T, V]; rows past n_new[b]
     are padding and meaningless.
+
+    With `last_only`, only each row's last real token is projected and the result is [B, V].
+    A 600-token prefill otherwise makes 112 MiB of fp32 logits only to keep one row.
 
     The same call serves prefill (T = prompt length), decode (T = 1) and speculative
     verification (T = k + 1)."""
@@ -59,6 +63,8 @@ def forward(
         out = F.scaled_dot_product_attention(q, k_all, v_all, attn_mask=mask, scale=attn.scaling, enable_gqa=True)
         hidden = hidden + attn.o_proj(out.transpose(1, 2).reshape(b, t, -1))
         hidden = hidden + layer.mlp(layer.post_attention_layernorm(hidden))
+    if last_only:
+        hidden = hidden[torch.arange(b, device=device), slots.total - slots.past - 1]
     return logits(model, core.norm(hidden))
 
 
