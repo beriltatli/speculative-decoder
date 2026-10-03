@@ -134,7 +134,9 @@ def environment(device: torch.device, seed: int, models: dict | None = None) -> 
     packages = ["torch", "transformers", "numpy", "scipy"]
     record = {
         "git_commit": git("rev-parse", "HEAD"),
-        "git_dirty": bool(git("status", "--porcelain")),
+        # Tracked files only: results written by earlier steps of the same run are untracked
+        # and say nothing about whether the measured code matches the commit.
+        "git_dirty": bool(git("status", "--porcelain", "--untracked-files=no")),
         "python": sys.version.split()[0],
         "packages": {p: importlib.metadata.version(p) for p in packages},
         "platform": platform.platform(),
