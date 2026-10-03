@@ -19,7 +19,7 @@ At temperature 0 the speculative loop must emit exactly the target's greedy sequ
 | Setup | Prompts | Tokens | Result |
 |:--|--:|--:|:--|
 | Tiny random Llama (2 layers, fp64), 1-layer early-exit draft, k = 4 | 200 | 24 | 200/200 identical (also batched at 8 and 25, and k = 1, 2, 3, 8) |
-| SmolLM2-360M target / SmolLM2-135M draft, fp64, CPU | 50 | 16 | running |
+| SmolLM2-360M target / SmolLM2-135M draft, fp64, CPU | 50 | 16 | 50/50 identical |
 | SmolLM2-1.7B target / SmolLM2-135M draft, bf16, Apple M3 (MPS) | 200 | 32 | running |
 
 The real-weight exact check uses the 360M target because the 1.7B needs 14 GiB in fp64. An earlier 32-token fp64 run was stopped at 78 prompts, with 78/78 identical, when the prompt count was cut to 50.
