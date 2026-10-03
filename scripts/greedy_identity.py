@@ -82,6 +82,7 @@ def run(name: str, target_spec: dict, draft_spec: dict, dtype: str, device: torc
         print(f"{name} {i:3d} {category:10s} identical={row['identical']}", flush=True)
     return {
         "target": target_spec, "draft": draft_spec, "dtype": dtype, "device": str(device),
+        "logits_dtype": str(torch.promote_types(getattr(torch, dtype), torch.float32)).removeprefix("torch."),
         "k": k, "max_new_tokens": max_new, "prompts": len(rows), "identical": sum(r["identical"] for r in rows),
         "seconds_last_session": round(time.perf_counter() - started, 1), "rows": rows,
     }

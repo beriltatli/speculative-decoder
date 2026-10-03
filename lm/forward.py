@@ -59,4 +59,19 @@ def forward(
         out = F.scaled_dot_product_attention(q, k_all, v_all, attn_mask=mask, scale=attn.scaling, enable_gqa=True)
         hidden = hidden + attn.o_proj(out.transpose(1, 2).reshape(b, t, -1))
         hidden = hidden + layer.mlp(layer.post_attention_layernorm(hidden))
-    return model.lm_head(core.norm(hidden))
+    return logits(model, core.norm(hidden))
+
+
+def logits(model: PreTrainedModel, hidden: torch.Tensor) -> torch.Tensor:
+    """The output projection in at least fp32. In bf16 the logit grid is 0.125 wide at
+    |x| ~ 20, so near-tied candidates often round to the same value, and argmax then breaks
+    the tie by whichever rounding a (k+1)-token verify and a 1-token decode happened to
+    produce: on the 1.7B target that flipped 8 of 13 diverging prompts at an exact tie. The
+    fp32 copy of the weight is made once and kept on the model (~400 MB for the 1.7B)."""
+    dtype = torch.promote_types(hidden.dtype, torch.float32)
+    weight = model.lm_head.weight
+    cached = getattr(model, "_lm_head_wide", None)
+    if cached is None or cached.dtype != dtype or cached.device != weight.device:
+        cached = weight.detach().to(dtype)
+        model._lm_head_wide = cached
+    return torch.nn.functional.linear(hidden.to(dtype), cached)

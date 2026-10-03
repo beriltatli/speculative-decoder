@@ -3,6 +3,7 @@ from collections.abc import Callable
 import torch
 from transformers import PreTrainedModel
 
+from lm.forward import logits as output_logits
 from lm.sampling import next_token
 
 
@@ -21,7 +22,9 @@ def generate(
     ids = torch.tensor([prompt], device=model.device)
     out: list[int] = []
     for _ in range(max_new_tokens):
-        logits = model(ids, use_cache=False).logits[0, -1]
+        # Same fp32 output projection as the cached path, so the two differ only in the cache.
+        hidden = model.model(ids, use_cache=False).last_hidden_state[:, -1]
+        logits = output_logits(model, hidden)[0]
         token = next_token(logits, temperature, generator)
         out.append(token)
         if len(out) == 1 and on_event:
