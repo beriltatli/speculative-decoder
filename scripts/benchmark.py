@@ -19,6 +19,7 @@ import argparse
 import itertools
 import json
 import statistics
+from collections.abc import Callable
 from pathlib import Path
 
 import torch
@@ -55,14 +56,20 @@ class FirstTokenStreamer(BaseStreamer):
 
 
 def workloads(target, draft, prompts: list[list[int]], device, settings: dict, eos_id: int | None,
-              acceptance: dict[str, list[tuple[int, int]]], reference: dict[int, list[int]]) -> dict[str, Workload]:
+              acceptance: dict[str, list[tuple[int, int]]], reference: dict[int, list[int]],
+              block_size: int = 16, new_cache: Callable[..., KVCache] | None = None) -> dict[str, Workload]:
+    """`new_cache(model, num_blocks, block_size)` replaces the default allocation, for a
+    caller that wants several workload sets to share K/V storage."""
     k, max_new = settings["k"], settings["max_new_tokens"]
     longest = max(len(p) for p in prompts) + max_new + k + 1
 
     def cache(model) -> KVCache:
         # Allocated once per method, outside the timed region; generate() frees its blocks.
-        blocks = -(-longest // 16) + 1
-        return KVCache.for_model(model.config, num_blocks=blocks, block_size=16, dtype=model.dtype, device=device)
+        blocks = -(-longest // block_size) + 1
+        if new_cache:
+            return new_cache(model, blocks, block_size)
+        return KVCache.for_model(model.config, num_blocks=blocks, block_size=block_size, dtype=model.dtype,
+                                 device=device)
 
     drafters = {
         "spec_ngram": NGramDraft(target.config.vocab_size),
