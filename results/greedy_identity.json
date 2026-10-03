@@ -1691,7 +1691,7 @@
   "max_new_tokens": 32,
   "prompts": 200,
   "identical": 194,
-  "seconds_last_session": 776.0,
+  "seconds_last_session": 712.4,
   "rows": [
    {
     "index": 0,
