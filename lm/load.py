@@ -62,23 +62,35 @@ def load_model(
 
 
 def pack(model: PreTrainedModel, device: torch.device) -> None:
-    """Move every parameter into one contiguous buffer on `device`. Moved one tensor at a
-    time, the MPS allocator rounds each up to its own heap: the 1.7B's 3.19 GiB of bf16
-    weights took 4.01 GiB of driver memory, against 3.26 GiB packed, on a machine where that
-    difference is the line between running and swapping. Tied weights are one parameter
-    and are packed once."""
+    """Move every parameter, and the fp32 output projection lm.forward.logits keeps, into one
+    contiguous buffer on `device`. The MPS allocator serves anything from 1 MB to ~1 GB out
+    of 1 GiB heaps and gives a heap back only when nothing in it is live. Moved tensor by
+    tensor, the 1.7B's 3.19 GiB of bf16 weights took 4.01 GiB of driver memory (3.26 GiB
+    packed), and the draft's 105 MiB fp32 head, made lazily on the first draft call, pinned
+    a fresh heap for the rest of the run: 5.27 of the 5.33 GiB allowed on an 8 GB machine.
+    Tied weights are one parameter and are packed once."""
     params = list(model.parameters())
-    dtypes = {p.dtype for p in params}
-    if len(dtypes) != 1:
-        model.to(device)
-        return
-    flat = torch.empty(sum(p.numel() for p in params), dtype=dtypes.pop(), device=device)
-    offset = 0
-    for p in params:
-        view = flat[offset : offset + p.numel()].view_as(p)
+    weight = model.lm_head.weight
+    wide = torch.promote_types(weight.dtype, torch.float32)
+    shapes = [(p.shape, p.dtype) for p in params]
+    if wide != weight.dtype:
+        shapes.append((weight.shape, wide))
+
+    def nbytes(shape: torch.Size, dtype: torch.dtype) -> int:
+        return -(-shape.numel() * dtype.itemsize // 256) * 256  # 256-byte aligned slices
+
+    flat = torch.empty(sum(nbytes(*sd) for sd in shapes), dtype=torch.uint8, device=device)
+    views, offset = [], 0
+    for shape, dtype in shapes:
+        size = shape.numel() * dtype.itemsize
+        views.append(flat[offset : offset + size].view(dtype).view(shape))
+        offset += nbytes(shape, dtype)
+    for p, view in zip(params, views):
         view.copy_(p.data)
         p.data = view
-        offset += p.numel()
+    if wide != weight.dtype:
+        views[-1].copy_(weight.detach())  # exact: every bf16 value is an fp32 value
+        model._lm_head_wide = views[-1]
     model.to(device)  # buffers (rotary frequencies)
 
 
