@@ -33,8 +33,11 @@ def select_prompts(counts: list[int]) -> list[tuple[str, str]]:
     return [(category, text) for category, n in zip(prompts, counts) for text in prompts[category][:n]]
 
 
-def new_cache(model: torch.nn.Module, device: torch.device) -> KVCache:
-    return KVCache.for_model(model.config, num_blocks=256, block_size=16, dtype=model.dtype, device=device)
+def new_cache(model: torch.nn.Module, device: torch.device, length: int) -> KVCache:
+    # Sized to the sequence: a fixed 256 blocks is 805 MB for the 1.7B, which on an 8 GB
+    # machine does not fit next to the weights.
+    return KVCache.for_model(model.config, num_blocks=-(-length // 16) + 1, block_size=16, dtype=model.dtype,
+                             device=device)
 
 
 def ulp(x: float, dtype: torch.dtype) -> float:
@@ -74,9 +77,10 @@ def run(name: str, target_spec: dict, draft_spec: dict, dtype: str, device: torc
         if i < len(rows):
             continue
         ids = target_tok(text)["input_ids"]
-        want = cached_autoregressive.generate(target, new_cache(target, device), ids, max_new, eos_id=eos)
-        drafter = RecordingDraft(draft, new_cache(draft, device))
-        out, stats = generate(target, new_cache(target, device), drafter, [ids], max_new, k=k, eos_id=eos)
+        length = len(ids) + max_new + k + 1
+        want = cached_autoregressive.generate(target, new_cache(target, device, length), ids, max_new, eos_id=eos)
+        drafter = RecordingDraft(draft, new_cache(draft, device, length))
+        out, stats = generate(target, new_cache(target, device, length), drafter, [ids], max_new, k=k, eos_id=eos)
         row: dict[str, Any] = {"index": i, "category": category, "identical": out[0] == want,
                                "alpha": stats.accepted / max(stats.drafted, 1)}
         at = first_divergence(out[0], want)
@@ -112,7 +116,8 @@ def rediagnose(name: str, target_spec: dict, dtype: str, device: torch.device, c
         if row["identical"]:
             continue
         ids = tokenizer(prompts[row["index"]][1])["input_ids"]
-        want = cached_autoregressive.generate(target, new_cache(target, device), ids, settings["max_new_tokens"],
+        want = cached_autoregressive.generate(target, new_cache(target, device, len(ids) + settings["max_new_tokens"]),
+                                              ids, settings["max_new_tokens"],
                                               eos_id=tokenizer.eos_token_id)
         at = row["diverge_at"]
         if at < len(want) and want[at] != row["reference_token"]:
