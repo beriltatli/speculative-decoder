@@ -1,6 +1,6 @@
 # Can a small draft model make a large one generate faster without changing a single output token?
 
-**Status: Phases 0–3 of 6 complete (KV cache, accept-reject, draft-verify loop). No speed measurements yet; those start in Phase 4. Two real-weight identity runs are in progress and marked as such below.**
+**Status: Phases 0–3 of 6 complete (KV cache, accept-reject, draft-verify loop). No speed measurements yet; the Phase 4 benchmark is running.**
 
 ## Why tokens/sec is the wrong headline
 
@@ -20,7 +20,8 @@ At temperature 0 the speculative loop must emit exactly the target's greedy sequ
 |:--|--:|--:|:--|
 | Tiny random Llama (2 layers, fp64), 1-layer early-exit draft, k = 4 | 200 | 24 | 200/200 identical (also batched at 8 and 25, and k = 1, 2, 3, 8) |
 | SmolLM2-360M target / SmolLM2-135M draft, fp64, CPU | 50 | 16 | 50/50 identical |
-| SmolLM2-1.7B target / SmolLM2-135M draft, bf16, Apple M3 (MPS) | 200 | 32 | running |
+| SmolLM2-1.7B target / SmolLM2-135M draft, bf16 weights, fp32 logits, Apple M3 (MPS) | 200 | 32 | 194/200 identical; all 6 flips are rounding (below) |
+| Same, bf16 logits (before the fix below) | 200 | 32 | 187/200 identical |
 
 The real-weight exact check uses the 360M target because the 1.7B needs 14 GiB in fp64. An earlier 32-token fp64 run was stopped at 78 prompts, with 78/78 identical, when the prompt count was cut to 50.
 
@@ -28,11 +29,13 @@ The real-weight exact check uses the 360M target because the 1.7B needs 14 GiB i
 
 In a 6-prompt smoke run on the 1.7B/135M pair in bf16, one prose prompt diverged at token 26. The reference's top two logits there are `' went'` 18.625 and `' then'` 18.5. Between 16 and 32 the bf16 grid spacing is 0.125, so the two candidates are one grid step apart. The verify pass runs k + 1 tokens through one matmul and plain decoding runs one token at a time. Those shapes round differently, and a one-step tie can come out either way. The same prompt is identical between cached and uncached plain decoding, and the n-gram draft diverges at the same position, which rules out the draft model.
 
-An accept step that is too lenient would also flip near-ties, so a small logit gap does not excuse a flip by itself. On the 200-prompt bf16 run, three conditions are asserted:
+An accept step that is too lenient would also flip near-ties, so a small logit gap does not excuse a flip by itself. Three conditions are asserted on the 200-prompt run:
 
-- each flip's top-2 gap is at most two grid steps;
+- each flip's top-2 gap is at most two grid steps of the model's compute dtype;
 - fewer than 5% of prompts flip;
 - the flips do not favour the draft. Rounding picks a side of the tie without reference to the draft, so the emitted token is the draft's at most about half the time. In a simulated-rounding control on the tiny model the figure was 22–27%. A lenient accept emits the draft's token every time. The test uses a one-sided binomial test against 1/2. A known-bad verifier that accepts any draft within 0.001 of the max logit is caught by it: every flip emits the draft's token.
+
+With bf16 logits the first run missed the second condition: 13 of 200 prompts flipped (6.5%). Seven of the 13 flips sat at an exact tie: the two candidates rounded to the same bf16 value, and argmax broke the tie differently in the two passes. The output projection now runs in fp32 for every method, the baselines included. The rerun flipped 6 of 200 (3.0%), with gaps between 0.001 and 0.071 logits (at most 1.14 grid steps) and no exact ties. One of the 6 flips emitted the draft's token (one-sided p = 0.98). What remains comes from bf16 hidden states, which fp32 logits do not change.
 
 ### Distribution preservation
 
