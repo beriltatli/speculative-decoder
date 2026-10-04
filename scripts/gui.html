@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Speculative Decoding Playground</title>
+<style>
+:root {
+  --bg: #f6f5f1; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6a64; --line: #e3e1da;
+  --accent: #2f6f4f; --accent-soft: #d8eee0; --accent-text: #1f5138;
+  --warn: #9a3b2e; --warn-soft: #f6dcd6; --bar: #c9c6bc; --focus: #2f6f4f55;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161614; --panel: #1f1f1c; --text: #ecebe6; --muted: #9b998f; --line: #34332f;
+    --accent: #6cc495; --accent-soft: #23412f; --accent-text: #a8e3c1;
+    --warn: #f08f7e; --warn-soft: #4a2620; --bar: #4a4943; --focus: #6cc49555;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #161614; --panel: #1f1f1c; --text: #ecebe6; --muted: #9b998f; --line: #34332f;
+  --accent: #6cc495; --accent-soft: #23412f; --accent-text: #a8e3c1;
+  --warn: #f08f7e; --warn-soft: #4a2620; --bar: #4a4943; --focus: #6cc49555;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+main { max-width: 980px; margin: 0 auto; padding: 28px 16px 48px; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+.sub { color: var(--muted); margin: 4px 0 20px; max-width: 70ch; }
+.pill { font-size: 13px; padding: 3px 10px; border-radius: 99px; background: var(--panel);
+  border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.pill.ready { color: var(--accent-text); background: var(--accent-soft); border-color: transparent; }
+.pill.bad { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+textarea { width: 100%; min-height: 96px; resize: vertical; font: inherit; color: var(--text);
+  background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+textarea:focus, select:focus, input:focus, button:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+.examples { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 14px; }
+.chip { font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 99px; cursor: pointer;
+  background: transparent; color: var(--muted); border: 1px solid var(--line); }
+.chip:hover { color: var(--text); border-color: var(--muted); }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; }
+.controls label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; }
+.controls output { color: var(--text); font-variant-numeric: tabular-nums; min-width: 3ch; }
+select { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 6px; padding: 2px 6px; }
+.run { margin-left: auto; font: inherit; font-weight: 600; padding: 8px 20px; border-radius: 8px;
+  border: 0; background: var(--accent); color: var(--panel); cursor: pointer; }
+.run:disabled { opacity: 0.5; cursor: default; }
+.kbd { font-size: 12px; color: var(--muted); }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 28px 0 10px; }
+.answer { white-space: pre-wrap; word-wrap: break-word; font-size: 15px; line-height: 1.7; min-height: 3em; }
+.answer .d { background: var(--accent-soft); color: var(--accent-text); border-radius: 3px; }
+.answer.empty { color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; font-size: 13px; color: var(--muted); }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+  margin-right: 6px; vertical-align: -1px; border: 1px solid var(--line); }
+.legend .ld::before { background: var(--accent-soft); border-color: transparent; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-weight: 500; color: var(--muted); font-size: 13px; padding: 0 8px 8px; }
+td { padding: 10px 8px; border-top: 1px solid var(--line); vertical-align: middle; }
+th.n, td.n { text-align: right; }
+.barcell { width: 32%; }
+.bar { position: relative; height: 8px; border-radius: 4px; background: var(--line); }
+.bar i { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--bar); transition: width .4s; }
+.bar i.win { background: var(--accent); }
+.bar b { position: absolute; top: -3px; bottom: -3px; width: 1px; background: var(--muted); }
+.speed { font-weight: 600; }
+.badge { font-size: 12px; padding: 2px 8px; border-radius: 99px; white-space: nowrap; }
+.badge.ok { background: var(--accent-soft); color: var(--accent-text); }
+.badge.no { background: var(--warn-soft); color: var(--warn); }
+.pending td { color: var(--muted); }
+.note { color: var(--muted); font-size: 13px; margin-top: 12px; max-width: 80ch; }
+.error { color: var(--warn); background: var(--warn-soft); border-radius: 8px; padding: 10px 12px; margin-top: 12px;
+  white-space: pre-wrap; display: none; }
+@media (max-width: 640px) {
+  .run { margin-left: 0; width: 100%; }
+  .barcell, th.barcell { display: none; }
+  td, th { padding-left: 4px; padding-right: 4px; }
+}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Speculative decoding playground</h1>
+    <span id="status" class="pill">Loading models…</span>
+  </header>
+  <p class="sub">A 135M draft model guesses the next few tokens; the 1.7B model checks them all in one pass and keeps the ones it agrees with. The answer must be identical to plain decoding, only faster.</p>
+
+  <section class="panel">
+    <textarea id="prompt" placeholder="Ask something, in English for best results…">Write a Python function that checks whether a string is a palindrome.</textarea>
+    <div class="examples" id="examples"></div>
+    <div class="controls">
+      <label>Max tokens <input id="maxnew" type="range" min="16" max="256" step="16" value="64"><output id="maxnew-out">64</output></label>
+      <label>Draft length k <select id="k"></select></label>
+      <label><input id="raw" type="checkbox"> Continue text as-is (no chat template)</label>
+      <button id="run" class="run" disabled>Generate</button>
+    </div>
+    <div class="kbd" style="margin-top:8px">⌘/Ctrl + Enter to generate</div>
+    <div id="error" class="error"></div>
+  </section>
+
+  <h2>Answer</h2>
+  <section class="panel">
+    <div id="answer" class="answer empty">The answer appears here.</div>
+    <div class="legend"><span class="ld">proposed by the draft model, accepted by the 1.7B</span><span>written by the 1.7B itself</span><span id="acc"></span></div>
+  </section>
+
+  <h2>Speed</h2>
+  <section class="panel">
+    <table>
+      <thead><tr><th>Method</th><th class="n">Time</th><th class="n">Tokens/s</th><th class="barcell">Speedup vs plain</th><th class="n">Accepted</th><th>Same tokens</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <p class="note">Greedy decoding, so all three must produce the same tokens. In bf16 a rare near-tie can round differently between a one-token step and a multi-token verify (about 3% of prompts in the README's 200-prompt run). Timings on one prompt are noisy; the README has the 100-round medians.</p>
+  </section>
+</main>
+<script>
+const METHODS = [["plain", "Plain decoding"], ["draft", "Draft model (135M)"], ["lookup", "Prompt lookup"]];
+const EXAMPLES = [
+  ["Code", "Write a Python function that checks whether a string is a palindrome."],
+  ["Story", "Describe a quiet morning in a small fishing village."],
+  ["List", "Continue this list: Monday, Tuesday, Wednesday, Thursday,"],
+  ["Explain", "Explain what a hash table is in three sentences."],
+  ["JSON", "Give a JSON object describing a book with title, author, year and three tags."],
+];
+const $ = (id) => document.getElementById(id);
+const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+
+for (let k = 1; k <= 8; k++) $("k").add(new Option(k, k, k === 4, k === 4));
+for (const [label, text] of EXAMPLES) {
+  const b = document.createElement("button");
+  b.className = "chip"; b.textContent = label;
+  b.onclick = () => { $("prompt").value = text; $("prompt").focus(); };
+  $("examples").append(b);
+}
+$("maxnew").oninput = () => { $("maxnew-out").value = $("maxnew").value; };
+
+function rows(results) {
+  const max = Math.max(1.5, ...Object.values(results).map((r) => r.speedup));
+  $("rows").innerHTML = METHODS.map(([key, name]) => {
+    const r = results[key];
+    if (!r) return `<tr class="pending"><td>${name}</td><td class="n">…</td><td class="n"></td><td class="barcell"></td><td class="n"></td><td></td></tr>`;
+    const pct = (r.speedup / max) * 100, one = (1 / max) * 100;
+    const same = r.same_as_plain ? `<span class="badge ok">identical</span>`
+                                 : `<span class="badge no">differs at token ${r.differs_at}</span>`;
+    return `<tr><td>${name}</td><td class="n">${r.seconds.toFixed(2)} s</td><td class="n">${r.tokens_per_s.toFixed(1)}</td>
+      <td class="barcell"><div class="bar"><i class="${r.speedup > 1.02 ? "win" : ""}" style="width:${pct}%"></i><b style="left:${one}%"></b></div>
+      <span class="speed">${r.speedup.toFixed(2)}×</span></td>
+      <td class="n">${r.accepted == null ? "–" : Math.round(r.accepted * 100) + "%"}</td><td>${same}</td></tr>`;
+  }).join("");
+}
+
+function answer(r) {
+  $("answer").classList.remove("empty");
+  $("answer").innerHTML = r.segments.map(([t, d]) => d ? `<span class="d">${esc(t)}</span>` : esc(t)).join("");
+}
+
+async function generate() {
+  const prompt = $("prompt").value.trim();
+  if (!prompt || $("run").disabled) return;
+  $("run").disabled = true; $("run").textContent = "Generating…";
+  $("error").style.display = "none"; $("acc").textContent = "";
+  const results = {}; rows(results);
+  try {
+    const res = await fetch("/generate", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt, max_new: +$("maxnew").value, k: +$("k").value, raw: $("raw").checked }) });
+    if (!res.ok) throw new Error(await res.text());
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const r = JSON.parse(buf.slice(0, nl)); buf = buf.slice(nl + 1);
+        if (r.error) throw new Error(r.error);
+        results[r.key] = r; rows(results);
+        if (r.key === "plain" && !results.draft) answer(r);
+        if (r.key === "draft") {
+          answer(r);
+          $("acc").textContent = `${Math.round(r.accepted * 100)}% of the draft's guesses accepted`;
+        }
+      }
+    }
+  } catch (e) {
+    $("error").textContent = e.message; $("error").style.display = "block";
+  } finally {
+    $("run").disabled = false; $("run").textContent = "Generate";
+  }
+}
+$("run").onclick = generate;
+$("prompt").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) generate(); });
+
+async function poll() {
+  try {
+    const s = await (await fetch("/status")).json();
+    if (s.error) { $("status").textContent = "Model loading failed"; $("status").className = "pill bad";
+      $("error").textContent = s.error; $("error").style.display = "block"; return; }
+    if (s.ready) { $("status").textContent = `Ready · ${s.models.target.split("/")[1]} + ${s.models.draft.split("/")[1]} on ${s.models.device}`;
+      $("status").className = "pill ready"; $("run").disabled = false; return; }
+  } catch (e) { $("status").textContent = "Server not reachable"; $("status").className = "pill bad"; }
+  setTimeout(poll, 1000);
+}
+rows({}); poll();
+</script>
+</body>
+</html>
