@@ -36,7 +36,7 @@ greedy_identity:
     max_new_tokens: 32
 
 cache:
-  block_size: 16  # provisional; Phase 5 measures waste against bookkeeping across sizes
+  block_size: 16  # Phase 5: 1.5% waste on long prompts, no latency difference from 1 to 256 (README)
   num_blocks: 2048
 
 bench:

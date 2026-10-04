@@ -1,6 +1,6 @@
 # Can a small draft model make a large one generate faster without changing a single output token?
 
-**Status: Phases 0–4 of 6 complete (KV cache, accept-reject, draft-verify loop, latency benchmark).**
+**Status: Phases 0–5 of 6 complete (KV cache, accept-reject, draft-verify loop, latency benchmark, block-size and batch-size sweeps).**
 
 ## Why tokens/sec is the wrong headline
 
@@ -121,6 +121,50 @@ TTFT is the first-token definition; "1st round" is the first-round definition (s
 | `hf_assisted` |  | 276 | 276 | 29.7 / 50.2 | 29.7 | – | 1,256 / 2,037 | 1.54× | 0.47 |
 
 </details>
+
+## Cache block size
+
+The paged cache hands out K/V memory in fixed blocks, and a sequence wastes the unused tail of its last block. Small blocks waste less but give each sequence a longer block table, which the cache rebuilds in Python on every append. `scripts/block_size.py` measures both sides.
+
+Waste is computed from the tokenized prompts of both conditions (309 long, 210 short) at the length each one reaches after 32 new tokens, through the cache's own `BlockTable`. The contiguous column reserves the workload's longest sequence for every request. That is the best a fixed preallocation can do, and it needs the lengths in advance.
+
+| Block size | 1 | 2 | 4 | 8 | 16 | 32 | 64 | 128 | 256 | contiguous |
+|:--|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| long: waste | 0.0% | 0.1% | 0.3% | 0.7% | 1.5% | 3.1% | 6.1% | 11.2% | 21.9% | 25% |
+| long: blocks per sequence (p50) | 478 | 239 | 120 | 60 | 30 | 15 | 8 | 4 | 2 | 1 |
+| short: waste | 0.0% | 0.7% | 2.2% | 4.4% | 8.8% | 17.1% | 22.2% | 47.1% | 72.7% | 66% |
+| short: blocks per sequence (p50) | 56 | 28 | 14 | 7 | 4 | 2 | 1 | 1 | 1 | 1 |
+
+The bookkeeping cost did not show up. Over 30 rounds on 30 long prompts, with all sizes interleaved, the cached baseline's p50 TPOT is 67.5–69.2 ms at block sizes 1, 4, 16, 64 and 256. The draft-model path's is 49.5–51.4 ms. Neither moves in step with the block size: block size 1, with 478 blocks per sequence, is no slower than 256. A decode step costs ~68 ms, and building a slot table from a few hundred integers is invisible next to it. The per-position K/V gather in `cache/kv.py` is the same work at every block size, so it does not show up here either.
+
+Block size 16 stays. It wastes 1.5% on long prompts and 8.8% on short ones, against 25% and 66% for contiguous reservation. Nothing in this measurement argues for smaller blocks: below 16 there is less than 2% left to save on long prompts. At the speculative peak a sequence holds k = 4 more positions, just after a verify. That changes these figures by at most 0.2 points on long prompts and 3 points on short ones. On short prompts, a 256-slot block wastes more than contiguous reservation, because the longest short sequence needs only 204 slots.
+
+## Batch size
+
+At batch 1, a decode step mostly reads the weights, so verifying k + 1 positions costs little more than decoding one. As the batch grows, each step does more arithmetic per weight read, and the positions a rejected draft wasted start to cost real time. `scripts/batch_size.py` measures how fast that erodes the advantage. Batches are decoded whole: plain cached decoding (`generate_batch`, tested equal to one-at-a-time decoding in fp64) against the speculative loop, at batch sizes 1, 2, 4 and 8. Every configuration is interleaved in the same rounds, with 2 warmup and 20 measured rounds per category.
+
+The prompts are the short ones (9–167 tokens). On the 1.7B target, K/V costs 192 KiB per token, so eight 600-token sequences would need ~1 GB of cache next to 4.7 GiB of weights and buffers. That is past the 5.33 GiB MPS limit of this machine. Twenty rounds give a usable median but no p99.
+
+Each speculative entry is its throughput (generated tokens per second, p50) divided by plain cached decoding's at the same batch size:
+
+| Category | Method | α (mean over B) | B = 1 | B = 2 | B = 4 | B = 8 |
+|:--|:--|--:|--:|--:|--:|--:|
+| code | `spec_ngram` | 0.06 | 1.03× | 0.82× | 0.70× | 0.65× |
+| code | `spec_draft` | 0.64 | 1.33× | 1.02× | 0.92× | 0.89× |
+| code | `cached` tokens/s | | 17.8 | 33.8 | 61.8 | 101.5 |
+| prose | `spec_ngram` | 0.04 | 0.95× | 0.77× | 0.67× | 0.60× |
+| prose | `spec_draft` | 0.36 | 0.93× | 0.83× | 0.65× | 0.62× |
+| prose | `cached` tokens/s | | 18.6 | 35.3 | 65.3 | 112.8 |
+| repetitive | `spec_ngram` | 0.32 | 1.91× | 1.44× | 1.28× | 1.04× |
+| repetitive | `spec_draft` | 0.69 | 1.31× | 1.20× | 0.99× | 0.97× |
+| repetitive | `cached` tokens/s | | 17.3 | 31.1 | 51.4 | 76.4 |
+
+- **At batch 1 the draft model wins only where it is accepted**: 1.33× on code (α 0.68), 1.31× on repetitive text (α 0.61), and 0.93× on prose (α 0.35). This agrees with the batch-1 benchmark above.
+- **The advantage shrinks as the batch grows, in every category.** Plain cached decoding's throughput rises 5.7× from batch 1 to 8 on code and 6.1× on prose, because extra sequences ride on the same weight reads. The speculative loop scales less. By batch 4 the draft model is at or below plain decoding everywhere (0.65–0.99×), and at batch 8 it reaches 0.62–0.97×.
+- **Prompt lookup holds up best on repetitive text**, where it costs no model: 1.91× at batch 1 and still 1.04× at batch 8. On code and prose its acceptance is 0.03–0.06, and it loses 35–40% by batch 8.
+- In this loop, a round lasts as long as its slowest row needs: every active sequence verifies k + 1 positions, and the batch waits for the last one to finish. That cost grows with the batch too, and these numbers include it.
+
+This sweep ran twice. The first run was taken overnight with the lid closed, so the Mac slept and ran it in ~40-second maintenance wakes from a cold start. Its repetitive category came out non-monotonic, and its cached throughput at batch 8 was 45 tokens/s against 76 awake. The prose and repetitive categories were remeasured with the machine awake, and the table uses the awake runs. Code had finished before the first sleep. The block-size sweep also had a 49-minute sleep in the middle. `perf_counter` does not count time asleep, but the rounds right after waking ran on a cold GPU. All block sizes were interleaved, so this cost lands on every size alike.
 
 ## Correctness
 
