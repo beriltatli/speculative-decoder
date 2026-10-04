@@ -69,3 +69,12 @@ def test_draft_cache_conditions_on_the_right_tokens(tiny, tiny_draft) -> None:
     # Both partial and full acceptance must have occurred for this to cover both lag cases.
     assert 0 < stats.accepted < stats.drafted
     assert any(e == K + 1 for e in stats.emitted_per_round)
+
+
+def test_drafted_per_round_counts_only_accepted_draft_tokens(tiny) -> None:
+    out, stats = generate(tiny, new_cache(tiny), ModelDraft(tiny, new_cache(tiny)), [[1, 2, 3, 4]], 13, k=4)
+    # A copy of the target accepts everything: each round emits 4 drafts + 1 bonus, and the
+    # last round is cut to the budget: 1 prefill token + 5 + 5 + 2 = 13.
+    assert stats.emitted_per_round == [5, 5, 2]
+    assert stats.drafted_per_round == [4, 4, 2]
+    assert 1 + sum(stats.emitted_per_round) == len(out[0])

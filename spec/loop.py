@@ -22,6 +22,9 @@ class SpecStats:
     accepts: list[int] = field(default_factory=list)
     # One entry per (sequence, round): tokens emitted that round, after eos/budget trimming.
     emitted_per_round: list[int] = field(default_factory=list)
+    # Same indexing: how many of those emitted tokens were draft tokens the target accepted.
+    # The rest (one, unless trimming cut it) is the target's own correction or bonus token.
+    drafted_per_round: list[int] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.attempts = [0] * self.k
@@ -79,6 +82,7 @@ def generate(
             new = draft[row, :n].tolist() + [int(verdict.next_token[row])]
             new = trim(new, len(outputs[s]), max_new_tokens, eos_id)
             stats.emitted_per_round.append(len(new))
+            stats.drafted_per_round.append(min(n, len(new)))
             length_before = len(contexts[s])
             contexts[s] = contexts[s] + new
             outputs[s] = outputs[s] + new
