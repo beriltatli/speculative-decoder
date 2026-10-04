@@ -1,3 +1,4 @@
+
 # Can a small draft model make a large one generate faster without changing a single output token?
 
 **Status: Phases 0–5 of 6 complete (KV cache, accept-reject, draft-verify loop, latency benchmark, block-size and batch-size sweeps).**
