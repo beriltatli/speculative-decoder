@@ -28,9 +28,9 @@ Totals are measured; the pace inside each run is spread evenly. <a href="figures
 
 <br><br>
 
-<a href="media/speculative-decoding-explainer.mp4"><img src="figures/explainer-thumbnail.jpg" alt="Play the 4-minute video explainer of speculative decoding" width="720"></a>
+https://github.com/user-attachments/assets/2c747dd9-a636-41ea-b0e1-63ea7e8682c0
 
-<sub>🎬 <b>New to this?</b> A narrated 4-minute, 1080p walkthrough with no maths required: the problem, one guess-and-check round, the KV cache, paged memory, and how correctness was tested. <a href="media/speculative-decoding-explainer.mp4">media/speculative-decoding-explainer.mp4</a> (49 MB)</sub>
+<sub>🎬 <b>New to this?</b> A narrated 4-minute walkthrough with no maths required: the problem, one guess-and-check round, the KV cache, paged memory, and how correctness was tested. The player streams a 720p copy; the 1080p original is <a href="media/speculative-decoding-explainer.mp4">media/speculative-decoding-explainer.mp4</a> (49 MB).</sub>
 
 </div>
 
@@ -43,7 +43,7 @@ Totals are measured; the pace inside each run is spread evenly. <a href="figures
 <td valign="top" width="33%">
 
 **Understand it**
-- [Video explainer](media/speculative-decoding-explainer.mp4) (4 min)
+- [Video explainer](#speculative-decoder) (4 min)
 - [The idea in one minute](#the-idea-in-one-minute)
 - [Words you will meet](#words-you-will-meet)
 - [How one round works](#how-one-round-works)
