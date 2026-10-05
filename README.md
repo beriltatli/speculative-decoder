@@ -3,6 +3,8 @@
 
 **Status: Phases 0–5 of 6 complete (KV cache, accept-reject, draft-verify loop, latency benchmark, block-size and batch-size sweeps).**
 
+**Video explainer** (4 min): [`media/speculative-decoding-explainer.mp4`](media/speculative-decoding-explainer.mp4)
+
 ## Why tokens/sec is the wrong headline
 
 ### Where the stopwatch stops decides the TTFT
